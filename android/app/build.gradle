@@ -1,0 +1,76 @@
+apply plugin: 'com.android.application'
+
+// JUCE source tree: -PjuceDir=..., env JUCE_DIR, gradle.properties, or the desktop build's copy.
+def juceDir = (project.findProperty('juceDir') ?: System.getenv('JUCE_DIR')
+               ?: file("${rootDir}/../build/_deps/juce-src").absolutePath)
+if (!file("${juceDir}/modules/juce_core").exists())
+    throw new GradleException("JUCE not found at ${juceDir}. Pass -PjuceDir=/path/to/JUCE-8.0.4")
+
+android {
+    namespace "com.deepaudio.wavegrid"
+    compileSdk 34
+    ndkVersion "26.2.11394342"          // JUCE 8 needs NDK 26 (ANDROID_WEAK_API_DEFS)
+
+    defaultConfig {
+        applicationId "com.deepaudio.wavegrid"
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName "0.1.0"
+        ndk { abiFilters "arm64-v8a" }   // add "armeabi-v7a", "x86_64" (emulator) if wanted
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_TOOLCHAIN=clang", "-DANDROID_PLATFORM=android-24",
+                          "-DANDROID_STL=c++_static", "-DANDROID_CPP_FEATURES=exceptions rtti",
+                          "-DANDROID_ARM_MODE=arm", "-DANDROID_ARM_NEON=TRUE",
+                          "-DANDROID_WEAK_API_DEFS=ON", "-DCMAKE_CXX_EXTENSIONS=OFF",
+                          "-DWAVEGRID_JUCE_DIR=${juceDir}"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    signingConfigs {
+        // Release signing: create the keystore (see README) and put the secrets in
+        // ~/.gradle/gradle.properties, never in the repo. Falls back to the debug key if unset.
+        release {
+            if (project.hasProperty('WG_KEYSTORE')) {
+                storeFile     file(project.property('WG_KEYSTORE'))
+                storePassword project.property('WG_STORE_PASS')
+                keyAlias      project.property('WG_KEY_ALIAS')
+                keyPassword   project.property('WG_KEY_PASS')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+            externalNativeBuild { cmake { cFlags "-O1"; cppFlags "-O1" } }   // -O0 is too slow for audio
+        }
+        release {
+            debuggable false
+            jniDebuggable false
+            minifyEnabled false
+            signingConfig project.hasProperty('WG_KEYSTORE') ? signingConfigs.release
+                                                              : signingConfigs.debug
+            externalNativeBuild { cmake { cFlags "-O3"; cppFlags "-O3" } }
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += ["${juceDir}/modules/juce_core/native/javacore/init",
+                             "${juceDir}/modules/juce_core/native/javacore/app",
+                             "${juceDir}/modules/juce_gui_basics/native/javaopt/app"]
+            res.srcDirs += ["${rootDir}/res"]      // launcher icons live in android/res
+        }
+    }
+}

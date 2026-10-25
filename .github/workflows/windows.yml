@@ -1,0 +1,40 @@
+name: Windows build (VST3 + Standalone)
+
+# Builds on a real Windows machine in the cloud and attaches the results to the run.
+# Trigger: Actions tab -> "Windows build" -> Run workflow, or push to main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build-win -G "Visual Studio 17 2022" -A x64 -DWAVEGRID_BUILD_TESTS=ON
+
+      - name: Build plugin + standalone
+        run: cmake --build build-win --config Release --target WaveGrid_Standalone WaveGrid_VST3
+
+      - name: Build and run tests
+        continue-on-error: true
+        run: |
+          cmake --build build-win --config Release --target WaveGrid_Tests
+          $t = Get-ChildItem -Recurse build-win -Filter WaveGrid_Tests.exe | Select-Object -First 1
+          & $t.FullName
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Get-ChildItem -Recurse build-win\WaveGrid_artefacts\Release -Directory -Filter *.vst3 | ForEach-Object { Copy-Item $_.FullName dist\ -Recurse }
+          Get-ChildItem -Recurse build-win\WaveGrid_artefacts\Release\Standalone -Filter *.exe | ForEach-Object { Copy-Item $_.FullName dist\ }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeepWave-windows-x64
+          path: dist

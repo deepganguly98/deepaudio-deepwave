@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DeepWave Touch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root { --cyan:#4de8ff; --violet:#a07bff; --pink:#ff6bd6; --bg:#05060b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  html, body { margin:0; height:100%; background:var(--bg); color:#e8ecf8; overflow:hidden; overscroll-behavior:none;
+               font:13px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; touch-action:none; }
+  #bar { position:fixed; left:0; right:0; top:0; height:46px; padding:max(6px, env(safe-area-inset-top)) 14px 6px; display:flex; align-items:center; gap:12px; z-index:2; }
+  #title { font-weight:700; font-size:17px; letter-spacing:.12em; background:linear-gradient(90deg,var(--cyan),var(--violet)); -webkit-background-clip:text; color:transparent; }
+  .pill { padding:4px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06); font-size:12px; white-space:nowrap; }
+  #status.ok { border-color:rgba(77,232,255,.7); color:var(--cyan); }
+  #status.bad { border-color:rgba(255,107,214,.7); color:var(--pink); }
+  #fingers { font-weight:700; min-width:92px; text-align:center; }
+  #spacer { flex:1; }
+  #hint { color:#7d849c; font-size:11px; }
+  canvas { position:fixed; left:0; right:0; top:46px; bottom:0; width:100%; height:calc(100% - 46px); display:block; touch-action:none; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="title">DEEPWAVE</span>
+  <span id="status" class="pill bad">connecting...</span>
+  <span id="fingers" class="pill">0 fingers</span>
+  <span id="peak" class="pill">max 0</span>
+  <span id="spacer"></span>
+  <span id="hint">multi-touch MPE controller</span>
+</div>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+// ---- layout: mirrors the app's default grid (6 strings, 13 frets, tuned in fourths) --------------
+const ROWS = 6, COLS = 13, BASE = 40, INTERVAL = 5, BEND_RANGE = 48, DEAD = 0.06;
+const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const noteName = n => NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
+
+const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+let W = 0, H = 0, dpr = 1;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  W = r.width; H = r.height;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener("resize", resize); addEventListener("orientationchange", () => setTimeout(resize, 200));
+resize();
+
+const cw = () => W / COLS, ch = () => H / ROWS;
+const rowAt = y => Math.max(0, Math.min(ROWS - 1, ROWS - 1 - Math.floor(y / ch())));
+const rowBase = r => BASE + r * INTERVAL;
+
+// continuous pitch in cells (cell centre k = pitch k) with a small fret deadzone, like the app
+function pitchAt(x) {
+  const p = x / cw() - 0.5, k = Math.floor(p), frac = p - k;
+  let f;
+  if (frac < DEAD) f = 0; else if (frac > 1 - DEAD) f = 1; else f = (frac - DEAD) / (1 - 2 * DEAD);
+  return k + f;
+}
+
+// ---- WebSocket to the Mac bridge --------------------------------------------------------------
+const statusEl = document.getElementById("status");
+let ws = null, wsOpen = false;
+function connect() {
+  ws = new WebSocket("ws://" + location.host + "/ws");
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { wsOpen = true; statusEl.textContent = "connected"; statusEl.className = "pill ok"; };
+  ws.onclose = ws.onerror = () => { wsOpen = false; statusEl.textContent = "reconnecting..."; statusEl.className = "pill bad"; releaseAll(); setTimeout(connect, 1000); };
+}
+function send(bytes) { if (wsOpen && ws.readyState === 1) ws.send(new Uint8Array(bytes)); }
+
+// ---- MPE message helpers ------------------------------------------------------------------------
+const clamp7 = v => Math.max(0, Math.min(127, Math.round(v)));
+const noteOn  = (c, n, v) => send([0x90 | (c - 1), n, clamp7(v)]);
+const noteOff = (c, n)    => send([0x80 | (c - 1), n, 0]);
+const pressure = (c, v)   => send([0xD0 | (c - 1), clamp7(v * 127)]);
+const timbre   = (c, v)   => send([0xB0 | (c - 1), 74, clamp7(v * 127)]);
+function bend(c, semis) {
+  const norm = Math.max(-1, Math.min(1, semis / BEND_RANGE));
+  const v14 = Math.max(0, Math.min(16383, Math.round(8192 + norm * 8191)));
+  send([0xE0 | (c - 1), v14 & 0x7F, (v14 >> 7) & 0x7F]);
+}
+
+// ---- touches: one MPE channel (2..16) per finger -----------------------------------------------------
+const busy = new Array(17).fill(false);
+const touches = new Map();             // pointerId -> state
+const vib = new Array(ROWS).fill(0);   // visual ring-out per row
+let maxFingers = 0;
+const fingersEl = document.getElementById("fingers"), peakEl = document.getElementById("peak");
+
+function alloc() { for (let c = 2; c <= 16; c++) if (!busy[c]) { busy[c] = true; return c; } return 0; }
+
+function pressureFor(e, y, row) {
+  if (e.pointerType === "pen" && e.pressure > 0) return e.pressure;       // Apple Pencil: real pressure
+  const top = H - (row + 1) * ch();
+  return 0.1 + 0.9 * Math.max(0, Math.min(1, 1 - (y - top) / ch()));       // fingers: height inside the string row
+}
+
+function down(e) {
+  const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (touches.has(e.pointerId)) up(e);
+  const c = alloc(); if (!c) return;
+  const row = rowAt(y), pitch = pitchAt(x), cell = Math.max(0, Math.min(COLS - 1, Math.round(pitch)));
+  const note = Math.max(0, Math.min(127, rowBase(row) + cell));
+  const pr = pressureFor(e, y, row);
+  const t = { c, note, row, cell, x, y, lastBend: 0, lastP: -1, lastT: -1, trail: [{ x, y }] };
+  // MPE order: centre bend, then expression, then note-on
+  bend(c, 0); bend(c, pitch - cell); t.lastBend = pitch - cell;
+  pressure(c, pr); t.lastP = pr; timbre(c, 0.5); t.lastT = 0.5;
+  noteOn(c, note, 20 + 107 * pr);
+  touches.set(e.pointerId, t);
+  vib[row] = 0;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  updateCount();
+}
+
+function move(e) {
+  const t = touches.get(e.pointerId); if (!t) return;
+  const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  t.x = x; t.y = y; t.trail.push({ x, y }); if (t.trail.length > 28) t.trail.shift();
+  const semis = pitchAt(x) - t.cell;
+  if (Math.abs(semis - t.lastBend) > 1e-4) { bend(t.c, semis); t.lastBend = semis; }
+  const pr = pressureFor(e, y, t.row);
+  if (Math.abs(pr - t.lastP) >= 1 / 127) { pressure(t.c, pr); t.lastP = pr; }
+  const top = H - (t.row + 1) * ch(), tb = Math.max(0, Math.min(1, 1 - (y - top) / ch()));
+  if (Math.abs(tb - t.lastT) >= 1 / 127) { timbre(t.c, tb); t.lastT = tb; }
+}
+
+function up(e) {
+  const t = touches.get(e.pointerId); if (!t) return;
+  noteOff(t.c, t.note); busy[t.c] = false; vib[t.row] = 1;
+  touches.delete(e.pointerId);
+  updateCount();
+}
+function releaseAll() { for (const [id, t] of touches) { noteOff(t.c, t.note); busy[t.c] = false; } touches.clear(); updateCount(); }
+function updateCount() {
+  const n = touches.size; maxFingers = Math.max(maxFingers, n);
+  fingersEl.textContent = n + (n === 1 ? " finger" : " fingers");
+  peakEl.textContent = "max " + maxFingers;
+}
+
+canvas.addEventListener("pointerdown", e => { e.preventDefault(); down(e); });
+canvas.addEventListener("pointermove", e => { e.preventDefault(); move(e); });
+canvas.addEventListener("pointerup", e => { e.preventDefault(); up(e); });
+canvas.addEventListener("pointercancel", up);
+canvas.addEventListener("lostpointercapture", up);
+for (const ev of ["touchstart", "touchmove", "gesturestart", "gesturechange", "contextmenu"])
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });
+
+// ---- drawing ----------------------------------------------------------------------------------
+function grad(x0, a0, a1) {
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  g.addColorStop(0, `rgba(77,232,255,${a0})`); g.addColorStop(1, `rgba(255,107,214,${a1})`); return g;
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+let phase = 0;
+function draw() {
+  phase += 1.1;
+  ctx.clearRect(0, 0, W, H);
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#0a0c16"); bg.addColorStop(1, "#06070d");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const w = cw(), h = ch();
+
+  for (let r = 0; r < ROWS; r++) {
+    const y = H - (r + 1) * h;
+    for (let c = 0; c < COLS; c++) {
+      const note = rowBase(r) + c, pc = note % 12;
+      const natural = [0, 2, 4, 5, 7, 9, 11].includes(pc);
+      let glow = 0;
+      for (const t of touches.values()) {
+        const dx = (t.x - (c + 0.5) * w) / w, dy = (t.y - (y + h / 2)) / h;
+        glow = Math.max(glow, 1 - Math.min(1, Math.hypot(dx, dy) * 0.55));
+      }
+      roundRect(c * w + 2.5, y + 2.5, w - 5, h - 5, 9);
+      ctx.fillStyle = natural ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"; ctx.fill();
+      if (pc === 0) { ctx.fillStyle = "rgba(160,123,255,0.14)"; ctx.fill(); }
+      if (glow > 0) { ctx.fillStyle = `rgba(77,232,255,${0.28 * glow * glow})`; ctx.fill(); }
+      ctx.strokeStyle = glow > 0.2 ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)"; ctx.lineWidth = 1; ctx.stroke();
+      if (pc === 0 || pc === 7) {
+        ctx.fillStyle = pc === 0 ? "rgba(255,255,255,.5)" : "rgba(255,255,255,.28)";
+        ctx.font = "bold " + Math.min(12, h * 0.28) + "px -apple-system, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+        ctx.fillText(noteName(note), c * w + 8, y + h - 7);
+      }
+    }
+  }
+
+  // strings: straight, pulled toward a finger, or ringing after release
+  for (let r = 0; r < ROWS; r++) {
+    const y0 = H - (r + 1) * h + h / 2, thick = 1.2 + 0.35 * (ROWS - r);
+    let held = null; for (const t of touches.values()) if (t.row === r) held = t;
+    ctx.beginPath(); ctx.moveTo(0, y0);
+    if (held) {
+      const tx = held.x, ty = Math.max(y0 - h * 0.45, Math.min(y0 + h * 0.45, held.y));
+      ctx.bezierCurveTo(tx * 0.5, y0, tx * 0.6, ty, tx, ty);
+      ctx.bezierCurveTo(tx + (W - tx) * 0.4, ty, tx + (W - tx) * 0.5, y0, W, y0);
+    } else if (vib[r] > 0.005) {
+      const a = vib[r] * h * 0.32;
+      for (let x = 0; x <= W; x += 6) ctx.lineTo(x, y0 + a * Math.sin(phase) * Math.sin(Math.PI * x / W) + 0.35 * a * Math.sin(phase * 2) * Math.sin(2 * Math.PI * x / W));
+      vib[r] *= 0.955;
+    } else ctx.lineTo(W, y0);
+    const lit = held || vib[r] > 0.005;
+    ctx.lineCap = "round";
+    if (lit) { ctx.strokeStyle = grad(0, 0.2, 0.2); ctx.lineWidth = thick + 9; ctx.stroke(); ctx.strokeStyle = grad(0, 0.3, 0.3); ctx.lineWidth = thick + 4; ctx.stroke(); }
+    ctx.strokeStyle = grad(0, lit ? 1 : 0.42, lit ? 1 : 0.42); ctx.lineWidth = thick; ctx.stroke();
+  }
+
+  // fingers: trail, glow, note name, finger id
+  let idx = 0;
+  for (const t of touches.values()) {
+    idx++;
+    for (let i = 1; i < t.trail.length; i++) {
+      const k = i / t.trail.length; ctx.strokeStyle = `rgba(160,123,255,${0.55 * k * k})`; ctx.lineWidth = 1 + 5 * k;
+      ctx.beginPath(); ctx.moveTo(t.trail[i - 1].x, t.trail[i - 1].y); ctx.lineTo(t.trail[i].x, t.trail[i].y); ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, 64);
+    g.addColorStop(0, "rgba(77,232,255,0.6)"); g.addColorStop(1, "rgba(160,123,255,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(t.x, t.y, 64, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.95)"; ctx.beginPath(); ctx.arc(t.x, t.y, 10, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#4de8ff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, 7); ctx.stroke();
+    const cells = t.x / w - 0.5, n = Math.max(0, Math.min(127, Math.round(rowBase(t.row) + cells)));
+    ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.font = "bold 13px -apple-system, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(noteName(n) + "  ch" + t.c, t.x, t.y - 28);
+  }
+  requestAnimationFrame(draw);
+}
+connect();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
