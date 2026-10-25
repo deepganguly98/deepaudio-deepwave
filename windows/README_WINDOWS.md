@@ -15,7 +15,7 @@ only route and is outside this project.
 This was prepared on a Mac, so **the Windows build has not been compiled or run yet**: expect to read the first error
 once, like any new platform.
 
-**On a PC:** install Visual Studio 2022 (workload *Desktop development with C++*) and CMake, then in a Developer
+**On a PC:** install Visual Studio 2022 or newer (workload *Desktop development with C++*) and CMake, then in a Developer
 Command Prompt from the project folder: `windows\build_windows.bat`. Results land in `dist\`.
 
 **Without a PC:** push the project to a GitHub repository and run the *Windows build* workflow

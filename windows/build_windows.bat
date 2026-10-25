@@ -1,11 +1,11 @@
 @echo off
 rem Builds DeepWave (VST3 + Standalone .exe) on Windows 10/11 x64.
-rem Needs: Visual Studio 2022 (workload "Desktop development with C++") and CMake 3.22+  (both on PATH / Developer prompt).
+rem Needs: Visual Studio 2022 or newer (workload "Desktop development with C++") and CMake 3.22+  (both on PATH / Developer prompt).
 rem Run from the project root:   windows\build_windows.bat
 setlocal
 cd /d "%~dp0\.."
 
-cmake -B build-win -G "Visual Studio 17 2022" -A x64 || goto :fail
+cmake -B build-win -A x64 || goto :fail
 cmake --build build-win --config Release --target WaveGrid_Standalone WaveGrid_VST3 || goto :fail
 
 rem collect the results into dist\

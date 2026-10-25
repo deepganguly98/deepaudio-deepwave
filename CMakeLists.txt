@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # macOS:  cmake -B build -G Xcode
 # iOS:    cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
-# Windows: cmake -B build-win -G "Visual Studio 17 2022" -A x64   (see windows/README_WINDOWS.md)
+# Windows: cmake -B build-win -A x64   (see windows/README_WINDOWS.md)
 #          cmake --build build-win --config Release --target WaveGrid_Standalone WaveGrid_VST3
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(WG_FORMATS AUv3 Standalone)
