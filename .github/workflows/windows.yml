@@ -8,6 +8,10 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
+    paths-ignore:        # docs/images alone do not need a 13-minute Windows build
+      - '**.md'
+      - 'docs/**'
+      - 'assets/**'
 
 permissions:
   contents: write   # needed to create the release on tag builds
