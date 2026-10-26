@@ -112,5 +112,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $setup = (Get-ChildItem dist -Filter "DeepWave-Setup-*.exe" | Select-Object -First 1).FullName
-          gh release create "${{ github.ref_name }}" $setup dist\DeepWave-windows-x64.zip --title "DeepWave ${{ github.ref_name }}" --notes-file windows\RELEASE_NOTES.md
+          $setup = Get-ChildItem dist -Filter "DeepWave-Setup-*.exe" | Select-Object -First 1
+          $shaSetup = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower()
+          $shaZip = (Get-FileHash dist\DeepWave-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          # fill the release-page template (banner, screenshots, install steps, checksums)
+          $notes = Get-Content windows\RELEASE_NOTES.md -Raw
+          $notes = $notes.Replace('{{REPO}}', '${{ github.repository }}').Replace('{{TAG}}', '${{ github.ref_name }}').Replace('{{SETUP_NAME}}', $setup.Name).Replace('{{SHA_SETUP}}', $shaSetup).Replace('{{SHA_ZIP}}', $shaZip)
+          Set-Content -Path notes.md -Value $notes -Encoding utf8
+          gh release create "${{ github.ref_name }}" $setup.FullName dist\DeepWave-windows-x64.zip --title "DeepWave ${{ github.ref_name }}" --notes-file notes.md
