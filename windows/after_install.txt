@@ -1,0 +1,16 @@
+DeepWave is installed.
+
+FL STUDIO
+  1. Open FL Studio (version 20.8 or newer, 64-bit).
+  2. Options > Manage plugins > "Find installed plugins" (a rescan).
+  3. Add > Instruments > DeepWave   (it is under "Installed > Generators").
+  Play it from the piano roll, a MIDI keyboard, or the on-screen grid in the plugin window.
+
+OTHER HOSTS (Ableton Live, Reaper, Cubase, Bitwig, Studio One)
+  Rescan plugins; DeepWave is a VST3 instrument.
+
+STANDALONE
+  Start menu > DeepWave. Pick your audio device under Options > Audio/MIDI Settings.
+  Your computer keyboard plays notes too: A W S E D F T G Y H U J K O L P, Z / X for octave.
+
+To remove DeepWave: Windows Settings > Apps > DeepWave > Uninstall.

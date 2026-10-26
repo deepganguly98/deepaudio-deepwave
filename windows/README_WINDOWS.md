@@ -1,10 +1,18 @@
 # DeepWave on Windows (VST3 + standalone, FL Studio)
 
+## For users: install in one click
+Download **`DeepWave-Setup-<version>-x64.exe`** from the project's *Releases* page, run it, and keep both boxes ticked
+(VST3 plugin and standalone app). It installs the plugin where FL Studio looks for it
+(`C:\Program Files\Common Files\VST3\`) and adds DeepWave to the Start menu with an uninstaller.
+Then in FL Studio: *Options -> Manage plugins -> Find installed plugins*.
+Windows SmartScreen may say "Windows protected your PC" because the installer is not code-signed:
+click *More info* -> *Run anyway*. `DeepWave-windows-x64.zip` is the manual copy-it-yourself version.
+
 ## What you get
 | Format | File | Where it goes |
 |---|---|---|
-| **VST3** instrument | `DeepWave.vst3` (a folder; the actual plugin is the .dll-style binary inside it) | `C:\Program Files\Common Files\VST3\` |
-| **Standalone app** | `DeepWave.exe` | anywhere, double-click |
+| **VST3** instrument | `DeepWave.vst3` (a folder; the plugin is the DLL inside it) | `C:\Program Files\Common Files\VST3\` |
+| **Standalone app** | `DeepWave.exe` | the installer puts it in `C:\Program Files\DeepAudio\DeepWave\` |
 
 **VST2 is not offered.** Steinberg withdrew the VST2 SDK in 2018 and JUCE 8 removed VST2 support, so a legal new VST2
 `.dll` cannot be built. FL Studio loads **VST3** natively (FL Studio 20.8 or newer, 64-bit), as do Reaper, Ableton,
@@ -19,8 +27,9 @@ once, like any new platform.
 Command Prompt from the project folder: `windows\build_windows.bat`. Results land in `dist\`.
 
 **Without a PC:** push the project to a GitHub repository and run the *Windows build* workflow
-(`.github/workflows/windows.yml`, Actions tab -> Run workflow). It builds on a Windows machine, runs the tests and
-attaches `DeepWave-windows-x64` (the .vst3 and the .exe) to the run. Nothing has been uploaded anywhere yet.
+(`.github/workflows/windows.yml`, Actions tab -> Run workflow). It builds on a Windows machine, runs the tests, builds the
+installer, installs it silently to check the files land correctly, validates the plugin with pluginval, uninstalls, and
+attaches the installer and zip to the run. Pushing a tag such as `v0.1.0` also publishes a GitHub Release.
 
 ## FL Studio
 1. Copy `DeepWave.vst3` to `C:\Program Files\Common Files\VST3\`.

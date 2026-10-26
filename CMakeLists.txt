@@ -28,6 +28,15 @@ else()
     endif()
 endif()
 
+# app icon: Windows wants a tightly cropped rounded square, macOS/iOS keep the system margin
+if(WIN32)
+    set(WG_ICON_BIG   "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_win_1024.png")
+    set(WG_ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_win_256.png")
+else()
+    set(WG_ICON_BIG   "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_mac_1024.png")
+    set(WG_ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_mac_256.png")
+endif()
+
 include(FetchContent)
 FetchContent_Declare(JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -51,8 +60,8 @@ juce_add_plugin(WaveGrid
     IPHONE_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
     IPAD_SCREEN_ORIENTATIONS   UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
     REQUIRES_FULL_SCREEN     TRUE
-    ICON_BIG                 "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_mac_1024.png"
-    ICON_SMALL               "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon_mac_256.png"
+    ICON_BIG                 "${WG_ICON_BIG}"
+    ICON_SMALL               "${WG_ICON_SMALL}"
     COPY_PLUGIN_AFTER_BUILD  ${WG_COPY_AFTER_BUILD})
 
 target_sources(WaveGrid PRIVATE

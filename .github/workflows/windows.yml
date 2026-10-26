@@ -1,11 +1,16 @@
-name: Windows build (VST3 + Standalone)
+name: Windows build (installer + VST3 + Standalone)
 
-# Builds on a real Windows machine in the cloud and attaches the results to the run.
-# Trigger: Actions tab -> "Windows build" -> Run workflow, or push to main.
+# Builds on a real Windows machine, makes a one-click installer, tests the install, and (for tags like v0.1.0)
+# publishes a GitHub Release with the downloads.
+# Run manually: Actions tab -> "Windows build" -> Run workflow.  Release: git tag v0.1.0 && git push origin v0.1.0
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write   # needed to create the release on tag builds
 
 jobs:
   windows:
@@ -25,8 +30,9 @@ jobs:
           cmake --build build-win --config Release --target WaveGrid_Tests
           $t = Get-ChildItem -Recurse build-win -Filter WaveGrid_Tests.exe | Select-Object -First 1
           & $t.FullName
+          if ($LASTEXITCODE -ne 0) { throw "tests failed" }
 
-      - name: Collect
+      - name: Collect build output
         shell: pwsh
         run: |
           New-Item -ItemType Directory dist | Out-Null
@@ -34,7 +40,69 @@ jobs:
           Get-ChildItem -Recurse build-win\WaveGrid_artefacts\Release\Standalone -Filter *.exe | ForEach-Object { Copy-Item $_.FullName dist\ }
           Get-ChildItem dist
 
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value
+          Write-Host "version $ver"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$ver" windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Get-ChildItem dist -Filter "DeepWave-Setup-*.exe" | Format-Table Name, Length
+
+      - name: Smoke-test the installer (silent install, check files, start app, uninstall)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter "DeepWave-Setup-*.exe" | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait
+          $vst = "$env:CommonProgramFiles\VST3\DeepWave.vst3\Contents\x86_64-win\DeepWave.vst3"
+          $exe = "$env:ProgramFiles\DeepAudio\DeepWave\DeepWave.exe"
+          if (-not (Test-Path $vst)) { throw "VST3 not installed at $vst" }
+          if (-not (Test-Path $exe)) { throw "standalone not installed at $exe" }
+          Write-Host "installed: $vst"; Write-Host "installed: $exe"
+          $p = Start-Process $exe -PassThru
+          Start-Sleep 8
+          if ($p.HasExited) { Write-Warning "standalone exited early with code $($p.ExitCode) (a CI runner has no audio device)" }
+          else { Write-Host "standalone is running"; Stop-Process $p -Force }
+          # keep the install for the plugin validation step; check the uninstaller afterwards
+          "VST=$vst" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Validate the installed VST3 (pluginval)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip pv
+          & .\pv\pluginval.exe --strictness-level 5 --validate-in-process --skip-gui-tests --output-dir pv-out "$env:CommonProgramFiles\VST3\DeepWave.vst3"
+          if ($LASTEXITCODE -ne 0) { throw "pluginval reported failures (exit $LASTEXITCODE)" }
+
+      - name: Uninstall and check it is removed
+        shell: pwsh
+        run: |
+          $u = "$env:ProgramFiles\DeepAudio\DeepWave\unins000.exe"
+          if (-not (Test-Path $u)) { throw "uninstaller missing" }
+          Start-Process $u -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep 3
+          if (Test-Path "$env:CommonProgramFiles\VST3\DeepWave.vst3") { throw "VST3 still present after uninstall" }
+          Write-Host "uninstall OK"
+
+      - name: Make the portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\DeepWave.vst3, dist\DeepWave.exe, windows\INSTALL.txt -DestinationPath dist\DeepWave-windows-x64.zip
+
       - uses: actions/upload-artifact@v4
         with:
-          name: DeepWave-windows-x64
-          path: dist
+          name: DeepWave-windows-installer
+          path: |
+            dist/DeepWave-Setup-*.exe
+            dist/DeepWave-windows-x64.zip
+
+      - name: Publish GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = (Get-ChildItem dist -Filter "DeepWave-Setup-*.exe" | Select-Object -First 1).FullName
+          gh release create "${{ github.ref_name }}" $setup dist\DeepWave-windows-x64.zip --title "DeepWave ${{ github.ref_name }}" --notes-file windows\RELEASE_NOTES.md
