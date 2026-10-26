@@ -90,6 +90,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    GridSurface& getGrid() { return grid; }   // used by the README screenshot tool
+
     // computer keyboard = piano: A W S E D F T G Y H U J K O L P, Z / X = octave down / up
     bool keyPressed (const juce::KeyPress&) override;
     bool keyStateChanged (bool isKeyDown) override;

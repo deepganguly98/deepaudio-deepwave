@@ -101,3 +101,21 @@ if(WAVEGRID_BUILD_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
         PRIVATE juce::juce_dsp juce::juce_audio_basics
         PUBLIC  juce::juce_recommended_config_flags)
 endif()
+
+# ---- README screenshot tool (macOS): renders the real editor offscreen, no screen-recording permission needed
+#   cmake -B build-shot -G Xcode -DWAVEGRID_BUILD_SCREENSHOT=ON && cmake --build build-shot --config Release --target WaveGrid_Screenshot
+option(WAVEGRID_BUILD_SCREENSHOT "Build the offscreen screenshot tool" OFF)
+if(WAVEGRID_BUILD_SCREENSHOT AND APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    juce_add_gui_app(WaveGrid_Screenshot PRODUCT_NAME "WaveGrid_Screenshot")
+    target_sources(WaveGrid_Screenshot PRIVATE
+        tools/screenshot/main.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp
+        Source/ui/GridSurface.cpp)
+    target_include_directories(WaveGrid_Screenshot PRIVATE Source)
+    target_compile_definitions(WaveGrid_Screenshot PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1 JucePlugin_Name="DeepWave")
+    target_link_libraries(WaveGrid_Screenshot PRIVATE
+        juce::juce_audio_utils juce::juce_audio_processors juce::juce_dsp
+        juce::juce_recommended_config_flags)
+endif()
