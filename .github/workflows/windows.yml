@@ -25,7 +25,6 @@ jobs:
         run: cmake --build build-win --config Release --target WaveGrid_Standalone WaveGrid_VST3
 
       - name: Build and run tests
-        continue-on-error: true
         run: |
           cmake --build build-win --config Release --target WaveGrid_Tests
           $t = Get-ChildItem -Recurse build-win -Filter WaveGrid_Tests.exe | Select-Object -First 1
@@ -68,13 +67,16 @@ jobs:
           "VST=$vst" | Out-File -Append $env:GITHUB_ENV
 
       - name: Validate the installed VST3 (pluginval)
-        continue-on-error: true
         shell: pwsh
         run: |
           Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
           Expand-Archive pv.zip pv
-          # pluginval is a GUI-subsystem exe: PowerShell does not wait for it or set $LASTEXITCODE, so wait explicitly
-          $p = Start-Process .\pv\pluginval.exe -Wait -PassThru -NoNewWindow -ArgumentList @('--strictness-level','5','--validate-in-process','--skip-gui-tests','--output-dir','pv-out',"$env:CommonProgramFiles\VST3\DeepWave.vst3")
+          # pluginval is a GUI-subsystem exe: PowerShell does not wait for it or set $LASTEXITCODE, so wait explicitly.
+          # Start-Process does not quote array arguments, so build one string with the path quoted (it contains spaces).
+          $vstDir = "$env:CommonProgramFiles\VST3\DeepWave.vst3"
+          $argLine = '--strictness-level 5 --validate-in-process --skip-gui-tests --output-dir pv-out "' + $vstDir + '"'
+          Write-Host "pluginval $argLine"
+          $p = Start-Process .\pv\pluginval.exe -Wait -PassThru -NoNewWindow -ArgumentList $argLine
           Write-Host "pluginval exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) { throw "pluginval reported failures (exit $($p.ExitCode))" }
 
