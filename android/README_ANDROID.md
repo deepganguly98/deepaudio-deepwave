@@ -60,7 +60,7 @@ Package names are Projucer-derived [V for versions, A for exact sdkmanager spell
 ## 2. Build a debug APK
 
 ```bash
-cd /Users/deepganguly98/Desktop/WaveGrid/android
+cd path/to/deepaudio-deepwave/android
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 gradle wrapper --gradle-version 8.6            # once; creates ./gradlew
 # JUCE tree: defaults to ../build/_deps/juce-src (run the desktop cmake configure once so it exists), or pass -PjuceDir=
@@ -96,7 +96,7 @@ keytool -genkeypair -v -keystore ~/wavegrid-release.jks -alias wavegrid \
   -keyalg RSA -keysize 2048 -validity 10000
 # NEVER commit the keystore or passwords. Put them in ~/.gradle/gradle.properties:
 cat >> ~/.gradle/gradle.properties <<'EOP'
-WG_KEYSTORE=/Users/deepganguly98/wavegrid-release.jks
+WG_KEYSTORE=/path/to/your-release.jks
 WG_STORE_PASS=changeme
 WG_KEY_ALIAS=wavegrid
 WG_KEY_PASS=changeme

@@ -135,6 +135,12 @@ Early release (0.1.0). The signal path and platform builds are tested automatica
 measurement and are still being refined by ear**. Please report what sounds off. Not yet done: code signing for Windows and macOS, a macOS
 installer, and a full on-device iPad build (the iPad touch bridge works today). An Android build is scaffolded under `android/` but has not been compiled.
 
+## Licence
+
+The source code is released under the **[MIT licence](LICENSE)**. DeepWave is built with [JUCE](https://juce.com), so **the compiled
+downloads are also subject to JUCE's licence (AGPLv3 unless you hold a commercial JUCE licence)**: see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). *VST is a registered trademark of Steinberg Media Technologies GmbH.*
+
 ## Credits
 
 Built with [JUCE](https://juce.com). Inspired by the published literature and open implementations: J. O. Smith's
