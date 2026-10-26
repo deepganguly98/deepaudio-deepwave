@@ -73,8 +73,10 @@ jobs:
         run: |
           Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
           Expand-Archive pv.zip pv
-          & .\pv\pluginval.exe --strictness-level 5 --validate-in-process --skip-gui-tests --output-dir pv-out "$env:CommonProgramFiles\VST3\DeepWave.vst3"
-          if ($LASTEXITCODE -ne 0) { throw "pluginval reported failures (exit $LASTEXITCODE)" }
+          # pluginval is a GUI-subsystem exe: PowerShell does not wait for it or set $LASTEXITCODE, so wait explicitly
+          $p = Start-Process .\pv\pluginval.exe -Wait -PassThru -NoNewWindow -ArgumentList @('--strictness-level','5','--validate-in-process','--skip-gui-tests','--output-dir','pv-out',"$env:CommonProgramFiles\VST3\DeepWave.vst3")
+          Write-Host "pluginval exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "pluginval reported failures (exit $($p.ExitCode))" }
 
       - name: Uninstall and check it is removed
         shell: pwsh
